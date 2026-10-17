@@ -15,7 +15,19 @@ import random
 import statistics
 import time
 
+import subprocess
+import sys
+
 import requests
+
+try:
+    from curl_cffi import requests as cffi
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "curl_cffi"], check=False)
+    try:
+        from curl_cffi import requests as cffi
+    except ImportError:
+        cffi = None
 
 # ====================== CONFIGURATION ======================
 
@@ -93,9 +105,14 @@ UA = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-session = requests.Session()
+if cffi:
+    session = cffi.Session(impersonate="chrome")
+    print("[mode] curl_cffi (empreinte Chrome)")
+else:
+    session = requests.Session()
+    session.headers.update({"User-Agent": UA})
+    print("[mode] requests classique")
 session.headers.update({
-    "User-Agent": UA,
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
     "Referer": f"https://{DOMAIN}/catalog",
@@ -106,7 +123,8 @@ def refresh_cookies():
     """Vinted exige un cookie de session : on le récupère via la page d'accueil."""
     session.cookies.clear()
     r = session.get(f"https://{DOMAIN}/", timeout=15)
-    print(f"[cookies] accueil HTTP {r.status_code}, cookies reçus : {sorted(session.cookies.keys())}")
+    r2 = session.get(f"https://{DOMAIN}/catalog?search_text=nike", timeout=15)
+    print(f"[cookies] accueil HTTP {r.status_code}, catalogue HTTP {r2.status_code}, cookies : {sorted(session.cookies.keys())}")
 
 
 def build_params(s, page=1, for_baseline=False):

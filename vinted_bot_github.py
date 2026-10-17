@@ -94,13 +94,19 @@ UA = (
 )
 
 session = requests.Session()
-session.headers.update({"User-Agent": UA, "Accept-Language": "fr-FR,fr;q=0.9"})
+session.headers.update({
+    "User-Agent": UA,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+    "Referer": f"https://{DOMAIN}/catalog",
+})
 
 
 def refresh_cookies():
     """Vinted exige un cookie de session : on le récupère via la page d'accueil."""
     session.cookies.clear()
-    session.get(f"https://{DOMAIN}/", timeout=15)
+    r = session.get(f"https://{DOMAIN}/", timeout=15)
+    print(f"[cookies] accueil HTTP {r.status_code}, cookies reçus : {sorted(session.cookies.keys())}")
 
 
 def build_params(s, page=1, for_baseline=False):
@@ -132,7 +138,10 @@ def fetch_items(s, page=1, for_baseline=False):
     if r.status_code in (401, 403):
         refresh_cookies()
         r = session.get(url, params=params, timeout=15)
-    r.raise_for_status()
+    ctype = r.headers.get("content-type", "")
+    if r.status_code >= 400 or "json" not in ctype:
+        extrait = r.text[:150].replace("\n", " ")
+        raise RuntimeError(f"HTTP {r.status_code}, type {ctype or 'inconnu'}, début : {extrait!r}")
     return r.json().get("items", [])
 
 
@@ -227,6 +236,7 @@ def main():
 
     refresh_cookies()
     ok = 0
+    fails = 0
 
     for s in SEARCHES:
         name = s["name"]
@@ -248,6 +258,10 @@ def main():
             ok += 1
         except Exception as e:
             print(f"[{name}] erreur : {e}")
+            fails += 1
+            if fails >= 3 and ok == 0:
+                print("Vinted refuse les requêtes : arrêt anticipé.")
+                break
             continue
 
         for item in items:
